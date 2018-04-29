@@ -26,6 +26,8 @@ class ImageCompare(object):
         image_b (str): File path to image to compare against. The baseline
 
     Attributes:
+        debug (bool): Debug mode to output image processing when
+            comparing images
         fail_threshold (float): Threshold value for failures
         warn_threshold (float): Threshold value for warnings
         image_a_buffer (ImageBuf): Image buffer
@@ -33,6 +35,8 @@ class ImageCompare(object):
     """
 
     def __init__(self, image_a, image_b):
+
+        self.debug = False
         self.fail_threshold = 0.1
         self.warn_threshold = 0.01
 
@@ -65,6 +69,10 @@ class ImageCompare(object):
                 Written only if there are failures
             blur (float): image blur to apply before comparing
         """
+
+        if not diff_image_location:
+            diff_image_location = os.path.dirname(self._image_a_location)
+
         self.blur_images(blur)
         ImageBufAlgo.compare(
             self.image_a_buffer,
@@ -74,6 +82,23 @@ class ImageCompare(object):
             self._compare_results,
         )
         diff_buffer = self.create_diff_buffer()
+
+        if self.debug:
+            self.image_a_buffer.write(
+                '{}/{}_debug{}'.format(
+                    diff_image_location,
+                    os.path.basename(self._image_a_location),
+                    self._file_ext,
+                )
+            )
+            self.image_b_buffer.write(
+                '{}/{}_debug{}'.format(
+                    diff_image_location,
+                    os.path.basename(self._image_b_location),
+                    self._file_ext,
+                )
+            )
+
         if self._compare_results.nfail > 0:
             ImageBufAlgo.color_map(diff_buffer, diff_buffer, -1, 'inferno')
             remap_buffer = ImageBuf()
@@ -91,8 +116,7 @@ class ImageCompare(object):
                 rmserror=self._compare_results.rms_error,
                 psnr=self._compare_results.PSNR
             )
-            if not diff_image_location:
-                diff_image_location = os.path.dirname(self._image_a_location)
+
             remap_buffer.write(
                 '{}/{}-{}_diff{}'.format(
                     diff_image_location,
@@ -203,6 +227,7 @@ if __name__ == '__main__':
         image_a='../tests/test_low_samples.png',
         image_b='../tests/test_high_samples.png',
     )
+    ic.debug = True
     try:
         ic.compare(blur=10)
     except ImageDifferenceError as ide:
