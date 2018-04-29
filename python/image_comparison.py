@@ -52,10 +52,10 @@ class ImageCompare(object):
         )
 
         # protected
-        self._image_location = image_a
+        self._image_a_location = image_a
+        self._image_b_location = image_b
         self._file_ext = os.path.splitext(image_a)[-1]
         self._compare_results = CompareResults()
-        self._diff_buffer = None
 
     def compare(self, diff_image_location=None, blur=10, raise_exception=True):
         """Compare the two given images
@@ -73,17 +73,14 @@ class ImageCompare(object):
             self.warn_threshold,
             self._compare_results,
         )
-
+        diff_buffer = self.create_diff_buffer()
         if self._compare_results.nfail > 0:
-            self._diff_buffer = ImageBuf(self.image_a_buffer.spec())
-            ImageBufAlgo.sub(self._diff_buffer, self.image_a_buffer, self.image_b_buffer)
-            ImageBufAlgo.abs(self._diff_buffer, self._diff_buffer)
-            ImageBufAlgo.color_map(self._diff_buffer, self._diff_buffer, -1, 'inferno')
+            ImageBufAlgo.color_map(diff_buffer, diff_buffer, -1, 'inferno')
             remap_buffer = ImageBuf()
-            multiplier = 50
+            multiplier = 5
             ImageBufAlgo.mul(
                 remap_buffer,
-                self._diff_buffer,
+                diff_buffer,
                 (multiplier, multiplier, multiplier, 1.0),
             )
             ImageBufAlgo.add(remap_buffer, self.image_a_buffer, remap_buffer)
@@ -95,11 +92,26 @@ class ImageCompare(object):
                 psnr=self._compare_results.PSNR
             )
             if not diff_image_location:
-                diff_image_location = os.path.dirname(self._image_location)
+                diff_image_location = os.path.dirname(self._image_a_location)
             remap_buffer.write(
-                '{}/{}_diff{}'.format(
+                '{}/{}-{}_diff{}'.format(
                     diff_image_location,
-                    os.path.basename(self._image_location),
+                    os.path.basename(self._image_a_location),
+                    os.path.basename(self._image_b_location),
+                    self._file_ext,
+                )
+            )
+            self.image_a_buffer.write(
+                '{}/{}_debug{}'.format(
+                    diff_image_location,
+                    '1_a',
+                    self._file_ext,
+                )
+            )
+            self.image_b_buffer.write(
+                '{}/{}_debug{}'.format(
+                    diff_image_location,
+                    '1_b',
                     self._file_ext,
                 )
             )
@@ -107,6 +119,18 @@ class ImageCompare(object):
                 raise ImageDifferenceError(msg)
             else:
                 print(msg)
+
+    def create_diff_buffer(self):
+        """Create a difference image buffer from image_a and image_b
+
+        Returns:
+            ImageBuf: new difference image buffer
+        """
+        diff_buffer = ImageBuf(self.image_a_buffer.spec())
+        ImageBufAlgo.sub(diff_buffer, self.image_a_buffer, self.image_b_buffer)
+        ImageBufAlgo.abs(diff_buffer, diff_buffer)
+
+        return diff_buffer
 
     def _blur(self, source, size=1.0):
         """Apply gaussian blur to given image
@@ -118,6 +142,7 @@ class ImageCompare(object):
         Return:
             ImageBuf: Blurred image
         """
+        source = self._open(source)
         kernel = ImageBuf(source.spec())
         ImageBufAlgo.make_kernel(
             kernel,
@@ -128,6 +153,35 @@ class ImageCompare(object):
         ImageBufAlgo.convolve(blurred, source, kernel)
 
         return blurred
+
+    def _dilate(self, source):
+        dilate = ImageBuf(source.spec())
+        ImageBufAlgo.dilate(
+            dilate,
+            source,
+            4,
+            4,
+        )
+        return dilate
+
+    def _open(self, source, size=3):
+        erode = ImageBuf(source.spec())
+        ImageBufAlgo.erode(erode, source, size, size)
+        dilate = ImageBuf(source.spec())
+        ImageBufAlgo.dilate(dilate, erode, size, size)
+
+        return dilate
+
+    def _median(self, source, size=5):
+        size = int(size)
+        median = ImageBuf(source.spec())
+        ImageBufAlgo.median_filter(
+            median,
+            source,
+            size,
+            size
+        )
+        return median
 
     def blur_images(self, size):
         """Blur test images with given size
@@ -141,13 +195,26 @@ class ImageCompare(object):
 
 if __name__ == '__main__':
 
+    # ic = ImageCompare(
+    #     image_a='../tests/image_a.png',
+    #     image_b='../tests/image_c.png',
+    # )
     ic = ImageCompare(
-        image_a='../tests/image_a.png',
-        image_b='../tests/image_c.png',
+        image_a='../tests/test_low_samples.png',
+        image_b='../tests/test_high_samples.png',
     )
     try:
-        ic.compare(blur=20)
+        ic.compare(blur=10)
     except ImageDifferenceError as ide:
         print(ide)
-
+    # image = ImageBuf('../tests/image_c.png')
+    # median = ImageBuf()
+    # ImageBufAlgo.median_filter(median, image, 5)
+    # median.write('../tests/median.png')
+    # dilated = ImageBuf()
+    # ImageBufAlgo.dilate(dilated, image, 4, 4)
+    # dilated.write('../tests/dilated.png')
+    # erode = ImageBuf()
+    # ImageBufAlgo.erode(erode, dilated, 2, 2)
+    # erode.write('../tests/erode.png')
 
